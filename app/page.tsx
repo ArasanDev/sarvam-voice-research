@@ -8,8 +8,13 @@ export default function Home() {
   const [isActive, setIsActive] = useState(false);
   const [transcript, setTranscript] = useState("");
   const [displayedTranscript, setDisplayedTranscript] = useState("");
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingError, setRecordingError] = useState<string | null>(null);
+  const [isPlayingAudio, setIsPlayingAudio] = useState(false);
+  const [validationError, setValidationError] = useState<string | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
+  const streamRef = useRef<MediaStream | null>(null);
 
   useEffect(() => {
     if (state.messages.length > 0) {
@@ -28,38 +33,68 @@ export default function Home() {
   }, [transcript, displayedTranscript]);
 
   const startRecording = async () => {
+    setRecordingError(null);
+    setValidationError(null);
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true }
+      });
+      streamRef.current = stream;
       const mediaRecorder = new MediaRecorder(stream);
       mediaRecorderRef.current = mediaRecorder;
       audioChunksRef.current = [];
+      setIsRecording(true);
 
       mediaRecorder.ondataavailable = (event) => {
         audioChunksRef.current.push(event.data);
       };
 
       mediaRecorder.onstop = async () => {
+        setIsRecording(false);
         const audioBlob = new Blob(audioChunksRef.current, { type: "audio/webm" });
+
+        if (audioBlob.size < 100) {
+          setRecordingError("No audio detected. Please try again.");
+          stream.getTracks().forEach((track) => track.stop());
+          return;
+        }
+
         try {
           const response = await fetch("/api/stt", {
             method: "POST",
             body: audioBlob,
             headers: { "Content-Type": "audio/webm" },
           });
+
+          if (!response.ok) {
+            throw new Error("STT failed");
+          }
+
           const result = await response.json();
-          if (result.transcript) {
+          if (result.transcript && result.transcript.trim()) {
             setTranscript(result.transcript);
             setDisplayedTranscript("");
+          } else {
+            setRecordingError("Could not understand audio. Please try again.");
           }
         } catch (err) {
+          setRecordingError("Voice processing failed. Please try again.");
           console.error("STT failed:", err);
         }
         stream.getTracks().forEach((track) => track.stop());
+        streamRef.current = null;
       };
 
       mediaRecorder.start();
-    } catch (err) {
-      console.error("Microphone access denied:", err);
+    } catch (err: any) {
+      if (err.name === "NotAllowedError") {
+        setRecordingError("Microphone permission denied. Please allow access in browser settings.");
+      } else if (err.name === "NotFoundError") {
+        setRecordingError("No microphone found. Please check your device.");
+      } else {
+        setRecordingError("Failed to access microphone. Please try again.");
+      }
+      console.error("Microphone access error:", err);
     }
   };
 
@@ -71,8 +106,14 @@ export default function Home() {
 
   const handleSend = () => {
     const text = displayedTranscript || transcript;
-    if (!text.trim()) return;
-    sendMessage(text);
+    if (!text.trim()) {
+      setValidationError("Please type a message or record audio");
+      setTimeout(() => setValidationError(null), 3000);
+      return;
+    }
+    setValidationError(null);
+    setRecordingError(null);
+    sendMessage(text, "en-IN", true);
     setTranscript("");
     setDisplayedTranscript("");
   };
@@ -80,6 +121,14 @@ export default function Home() {
   const handleInputChange = (text: string) => {
     setTranscript(text);
     setDisplayedTranscript(text);
+    setValidationError(null);
+  };
+
+  const clearAll = () => {
+    setTranscript("");
+    setDisplayedTranscript("");
+    setRecordingError(null);
+    setValidationError(null);
   };
 
   return (
@@ -114,8 +163,8 @@ export default function Home() {
         }
       `}</style>
 
-      <div className="flex w-full gap-8" style={{ maxWidth: "1200px" }}>
-        <div className={`chat-container flex-shrink-0 transition-all ${isActive ? "active w-1/2" : "w-96"}`}>
+      <div className="flex w-full flex-col gap-8 lg:flex-row" style={{ maxWidth: "1400px" }}>
+        <div className={`chat-container flex-shrink-0 transition-all ${isActive ? "active lg:w-1/2" : "w-full lg:w-96"}`}>
           <div className="flex h-screen flex-col items-center justify-center p-6">
             <div className="w-full max-w-sm rounded-lg border border-green-500/30 bg-slate-900/50 p-8 backdrop-blur-xl">
               <h1 className="mb-8 text-center font-mono text-sm tracking-widest text-green-400">
@@ -123,19 +172,47 @@ export default function Home() {
               </h1>
 
               <div className="mb-6 space-y-4">
+                {/* Transcript Display */}
                 <div className="min-h-24 rounded border border-green-500/20 bg-slate-950/50 p-4 font-mono text-sm text-green-300">
                   {displayedTranscript || transcript || "Listening..."}
+                  {isRecording && <span className="ml-2 animate-pulse">🔴</span>}
                 </div>
 
+                {/* Error Messages */}
+                {recordingError && (
+                  <div className="rounded border border-red-500/30 bg-red-500/10 p-3 font-mono text-sm text-red-300">
+                    ⚠️ {recordingError}
+                  </div>
+                )}
+
+                {validationError && (
+                  <div className="rounded border border-yellow-500/30 bg-yellow-500/10 p-3 font-mono text-sm text-yellow-300">
+                    ⚠️ {validationError}
+                  </div>
+                )}
+
+                {/* Recording Status */}
+                {isRecording && (
+                  <div className="rounded border border-blue-500/30 bg-blue-500/10 p-3 font-mono text-sm text-blue-300">
+                    🎤 Recording... (hold to continue, release to stop)
+                  </div>
+                )}
+
+                {/* Buttons */}
                 <div className="flex gap-3">
                   <button
                     onMouseDown={startRecording}
                     onMouseUp={stopRecording}
                     onTouchStart={startRecording}
                     onTouchEnd={stopRecording}
-                    className="flex flex-1 items-center justify-center rounded bg-green-500/10 py-3 font-mono text-sm text-green-400 hover:bg-green-500/20 active:bg-green-500/30"
+                    disabled={isRecording}
+                    className={`flex flex-1 items-center justify-center rounded py-3 font-mono text-sm font-bold transition ${
+                      isRecording
+                        ? "bg-red-500/30 text-red-300"
+                        : "bg-green-500/10 text-green-400 hover:bg-green-500/20 active:bg-green-500/30"
+                    }`}
                   >
-                    🎤 RECORD
+                    {isRecording ? "🔴 RECORDING" : "🎤 RECORD"}
                   </button>
                   <button
                     onClick={handleSend}
@@ -145,6 +222,7 @@ export default function Home() {
                   </button>
                 </div>
 
+                {/* Text Input */}
                 <textarea
                   value={transcript}
                   onChange={(e) => handleInputChange(e.target.value)}
@@ -158,9 +236,9 @@ export default function Home() {
         </div>
 
         {isActive && (
-          <div className="tool-panel active flex flex-1 flex-col gap-4 overflow-hidden py-6">
-            <div className="flex-1 overflow-y-auto">
-              <div className="space-y-4 pr-4">
+          <div className="tool-panel active flex flex-1 flex-col gap-4 overflow-hidden rounded border border-green-500/30 bg-slate-900/30 p-4 py-6 lg:border-l lg:border-b-0 lg:bg-transparent lg:p-0 lg:py-0">
+            <div className="flex-1 overflow-y-auto rounded lg:rounded-none">
+              <div className="space-y-4 pr-4 lg:pr-4">
                 {thinking && (
                   <div className="rounded border border-blue-500/30 bg-blue-500/10 p-3">
                     <div className="mb-2 font-mono text-xs uppercase tracking-wider text-blue-400">

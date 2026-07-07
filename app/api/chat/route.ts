@@ -14,9 +14,36 @@ interface ChatRequestBody {
 }
 
 export async function POST(req: NextRequest) {
-  const body = (await req.json()) as ChatRequestBody;
-  const languageCode = body.languageCode === "ta-IN" ? "ta-IN" : "en-IN";
-  const conversationId = getOrCreateConversation(body.conversationId, languageCode);
+  try {
+    const body = (await req.json()) as ChatRequestBody;
+
+    // Validate required fields
+    if (!body.userText || typeof body.userText !== "string") {
+      return new Response(JSON.stringify({ error: "userText is required and must be a string" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    if (body.userText.trim().length === 0) {
+      return new Response(JSON.stringify({ error: "userText cannot be empty" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    if (!body.history || !Array.isArray(body.history)) {
+      return new Response(JSON.stringify({ error: "history must be an array" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    // Validate language code
+    const validLanguages = ["en-IN", "ta-IN", "hi-IN", "kn-IN", "te-IN", "ml-IN", "mr-IN", "bn-IN", "gu-IN"];
+    const languageCode = validLanguages.includes(body.languageCode) ? body.languageCode : "en-IN";
+
+    const conversationId = getOrCreateConversation(body.conversationId, languageCode);
 
   const history: ChatMessage[] = body.history.map((m) => ({
     role: m.role,
@@ -54,11 +81,24 @@ export async function POST(req: NextRequest) {
     },
   });
 
-  return new Response(stream, {
-    headers: {
-      "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache, no-transform",
-      Connection: "keep-alive",
-    },
-  });
+    return new Response(stream, {
+      headers: {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache, no-transform",
+        Connection: "keep-alive",
+      },
+    });
+  } catch (err: any) {
+    if (err instanceof SyntaxError) {
+      return new Response(JSON.stringify({ error: "Invalid JSON in request body" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    console.error("Unexpected error in /api/chat:", err);
+    return new Response(JSON.stringify({ error: "Internal server error" }), {
+      status: 500,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
 }
