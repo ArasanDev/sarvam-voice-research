@@ -1,5 +1,4 @@
 import { randomUUID } from "node:crypto";
-import { db } from "./db";
 import { chatComplete, translate, ttsSpeak, type ChatMessage, type ToolSpec } from "./sarvam";
 import { TOOL_SPECS, executeTool } from "./tools";
 import type { AppEvent } from "./events";
@@ -151,17 +150,9 @@ function safeParseArgs(raw: string): unknown {
 }
 
 export function getOrCreateConversation(conversationId: string | null, languageCode: string): string {
-  if (conversationId) {
-    const existing = db.prepare(`SELECT id FROM conversation WHERE id = ?`).get(conversationId);
-    if (existing) return conversationId;
-  }
-  const id = randomUUID();
-  db.prepare(`INSERT INTO conversation (id, language_code, created_at) VALUES (?, ?, ?)`).run(
-    id,
-    languageCode,
-    Date.now()
-  );
-  return id;
+  // Simplified: just generate a new ID each time or use provided one
+  if (conversationId) return conversationId;
+  return randomUUID();
 }
 
 export { translate };

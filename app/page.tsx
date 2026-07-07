@@ -1,40 +1,19 @@
 "use client";
 
-import { useRef, useEffect, useState } from "react";
+import { useRef, useState } from "react";
 import { useChat } from "@/lib/useChat";
 
 export default function Home() {
   const { state, sendMessage, thinking } = useChat();
-  const [isActive, setIsActive] = useState(false);
-  const [transcript, setTranscript] = useState("");
-  const [displayedTranscript, setDisplayedTranscript] = useState("");
+  const [input, setInput] = useState("");
   const [isRecording, setIsRecording] = useState(false);
-  const [recordingError, setRecordingError] = useState<string | null>(null);
-  const [isPlayingAudio, setIsPlayingAudio] = useState(false);
-  const [validationError, setValidationError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const streamRef = useRef<MediaStream | null>(null);
 
-  useEffect(() => {
-    if (state.messages.length > 0) {
-      setIsActive(true);
-    }
-  }, [state.messages]);
-
-  useEffect(() => {
-    let index = 0;
-    if (displayedTranscript.length < transcript.length) {
-      const timer = setTimeout(() => {
-        setDisplayedTranscript(transcript.slice(0, index + 1));
-      }, 30);
-      return () => clearTimeout(timer);
-    }
-  }, [transcript, displayedTranscript]);
-
   const startRecording = async () => {
-    setRecordingError(null);
-    setValidationError(null);
+    setError(null);
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: { echoCancellation: true, noiseSuppression: true }
@@ -54,241 +33,142 @@ export default function Home() {
         const audioBlob = new Blob(audioChunksRef.current, { type: "audio/webm" });
 
         if (audioBlob.size < 100) {
-          setRecordingError("No audio detected. Please try again.");
-          stream.getTracks().forEach((track) => track.stop());
+          setError("No audio detected.");
+          stream.getTracks().forEach((t) => t.stop());
           return;
         }
 
         try {
-          const response = await fetch("/api/stt", {
+          const res = await fetch("/api/stt", {
             method: "POST",
             body: audioBlob,
             headers: { "Content-Type": "audio/webm" },
           });
 
-          if (!response.ok) {
-            throw new Error("STT failed");
-          }
-
-          const result = await response.json();
-          if (result.transcript && result.transcript.trim()) {
-            setTranscript(result.transcript);
-            setDisplayedTranscript("");
+          const result = await res.json();
+          if (result.transcript?.trim()) {
+            setInput(result.transcript);
           } else {
-            setRecordingError("Could not understand audio. Please try again.");
+            setError("Could not understand audio.");
           }
         } catch (err) {
-          setRecordingError("Voice processing failed. Please try again.");
-          console.error("STT failed:", err);
+          setError("Voice processing failed.");
         }
-        stream.getTracks().forEach((track) => track.stop());
-        streamRef.current = null;
+        stream.getTracks().forEach((t) => t.stop());
       };
 
       mediaRecorder.start();
     } catch (err: any) {
-      if (err.name === "NotAllowedError") {
-        setRecordingError("Microphone permission denied. Please allow access in browser settings.");
-      } else if (err.name === "NotFoundError") {
-        setRecordingError("No microphone found. Please check your device.");
-      } else {
-        setRecordingError("Failed to access microphone. Please try again.");
-      }
-      console.error("Microphone access error:", err);
+      setError(err.name === "NotAllowedError" ? "Microphone access denied." : "Microphone error.");
     }
   };
 
   const stopRecording = () => {
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
-      mediaRecorderRef.current.stop();
-    }
+    mediaRecorderRef.current?.stop();
   };
 
   const handleSend = () => {
-    const text = displayedTranscript || transcript;
-    if (!text.trim()) {
-      setValidationError("Please type a message or record audio");
-      setTimeout(() => setValidationError(null), 3000);
+    if (!input.trim()) {
+      setError("Type a message or record audio.");
       return;
     }
-    setValidationError(null);
-    setRecordingError(null);
-    sendMessage(text, "en-IN", true);
-    setTranscript("");
-    setDisplayedTranscript("");
+    setError(null);
+    sendMessage(input, "en-IN", true);
+    setInput("");
   };
 
-  const handleInputChange = (text: string) => {
-    setTranscript(text);
-    setDisplayedTranscript(text);
-    setValidationError(null);
-  };
-
-  const clearAll = () => {
-    setTranscript("");
-    setDisplayedTranscript("");
-    setRecordingError(null);
-    setValidationError(null);
-  };
+  const isActive = state.messages.length > 0;
 
   return (
-    <div className="flex h-screen w-full items-center justify-center bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 p-4">
-      <style>{`
-        @keyframes slideLeft {
-          from {
-            transform: translateX(0);
-          }
-          to {
-            transform: translateX(-40%);
-          }
-        }
+    <div className="flex h-screen w-full flex-col bg-slate-950 text-white">
+      {/* Header */}
+      <div className="border-b border-green-500/20 px-6 py-4">
+        <h1 className="font-mono text-sm tracking-widest text-green-400">
+          SARVAM VOICE RESEARCH ASSISTANT
+        </h1>
+      </div>
 
-        .chat-container {
-          transition: all 400ms cubic-bezier(0.4, 0, 0.2, 1);
-        }
-
-        .chat-container.active {
-          animation: slideLeft 400ms cubic-bezier(0.4, 0, 0.2, 1) forwards;
-        }
-
-        .tool-panel {
-          opacity: 0;
-          transform: translateX(100%);
-          transition: all 400ms cubic-bezier(0.4, 0, 0.2, 1);
-        }
-
-        .tool-panel.active {
-          opacity: 1;
-          transform: translateX(0);
-        }
-      `}</style>
-
-      <div className="flex w-full flex-col gap-8 lg:flex-row" style={{ maxWidth: "1400px" }}>
-        <div className={`chat-container flex-shrink-0 transition-all ${isActive ? "active lg:w-1/2" : "w-full lg:w-96"}`}>
-          <div className="flex h-screen flex-col items-center justify-center p-6">
-            <div className="w-full max-w-sm rounded-lg border border-green-500/30 bg-slate-900/50 p-8 backdrop-blur-xl">
-              <h1 className="mb-8 text-center font-mono text-sm tracking-widest text-green-400">
-                SARVAM VOICE RESEARCH
-              </h1>
-
-              <div className="mb-6 space-y-4">
-                {/* Transcript Display */}
-                <div className="min-h-24 rounded border border-green-500/20 bg-slate-950/50 p-4 font-mono text-sm text-green-300">
-                  {displayedTranscript || transcript || "Listening..."}
-                  {isRecording && <span className="ml-2 animate-pulse">🔴</span>}
-                </div>
-
-                {/* Error Messages */}
-                {recordingError && (
-                  <div className="rounded border border-red-500/30 bg-red-500/10 p-3 font-mono text-sm text-red-300">
-                    ⚠️ {recordingError}
-                  </div>
-                )}
-
-                {validationError && (
-                  <div className="rounded border border-yellow-500/30 bg-yellow-500/10 p-3 font-mono text-sm text-yellow-300">
-                    ⚠️ {validationError}
-                  </div>
-                )}
-
-                {/* Recording Status */}
-                {isRecording && (
-                  <div className="rounded border border-blue-500/30 bg-blue-500/10 p-3 font-mono text-sm text-blue-300">
-                    🎤 Recording... (hold to continue, release to stop)
-                  </div>
-                )}
-
-                {/* Buttons */}
-                <div className="flex gap-3">
-                  <button
-                    onMouseDown={startRecording}
-                    onMouseUp={stopRecording}
-                    onTouchStart={startRecording}
-                    onTouchEnd={stopRecording}
-                    disabled={isRecording}
-                    className={`flex flex-1 items-center justify-center rounded py-3 font-mono text-sm font-bold transition ${
-                      isRecording
-                        ? "bg-red-500/30 text-red-300"
-                        : "bg-green-500/10 text-green-400 hover:bg-green-500/20 active:bg-green-500/30"
-                    }`}
-                  >
-                    {isRecording ? "🔴 RECORDING" : "🎤 RECORD"}
-                  </button>
-                  <button
-                    onClick={handleSend}
-                    className="flex flex-1 items-center justify-center rounded bg-green-500 py-3 font-mono text-sm font-bold text-slate-950 hover:bg-green-400 active:scale-95"
-                  >
-                    SEND
-                  </button>
-                </div>
-
-                {/* Text Input */}
-                <textarea
-                  value={transcript}
-                  onChange={(e) => handleInputChange(e.target.value)}
-                  placeholder="Or type here..."
-                  className="w-full rounded border border-green-500/20 bg-slate-950/50 p-3 font-mono text-sm text-green-300 placeholder-green-500/30 outline-none focus:border-green-500/50"
-                  rows={3}
-                />
+      {/* Main Content */}
+      <div className="flex flex-1 overflow-hidden">
+        {/* Chat Area */}
+        <div className="flex flex-1 flex-col overflow-y-auto p-6">
+          <div className="space-y-4">
+            {state.messages.map((msg) => (
+              <div
+                key={msg.id}
+                className={`rounded p-3 font-mono text-sm ${
+                  msg.role === "user"
+                    ? "border border-blue-500/30 bg-blue-500/10 text-blue-300 ml-auto max-w-[70%]"
+                    : "border border-green-500/30 bg-green-500/10 text-green-300 mr-auto max-w-[70%]"
+                }`}
+              >
+                {msg.text}
               </div>
-            </div>
+            ))}
+
+            {thinking && (
+              <div className="rounded border border-yellow-500/30 bg-yellow-500/10 p-3 font-mono text-sm text-yellow-300">
+                💭 {thinking}
+              </div>
+            )}
+
+            {state.trace.map((event) => (
+              <div
+                key={event.id}
+                className="rounded border border-purple-500/30 bg-purple-500/10 p-2 font-mono text-xs text-purple-300"
+              >
+                {event.type === "tool_call" && `🔧 ${event.tool}`}
+                {event.type === "tool_result" && `✓ ${event.tool} result`}
+              </div>
+            ))}
+
+            {state.error && (
+              <div className="rounded border border-red-500/30 bg-red-500/10 p-3 font-mono text-sm text-red-300">
+                ⚠️ {state.error}
+              </div>
+            )}
+
+            {error && (
+              <div className="rounded border border-red-500/30 bg-red-500/10 p-3 font-mono text-sm text-red-300">
+                ⚠️ {error}
+              </div>
+            )}
           </div>
         </div>
+      </div>
 
-        {isActive && (
-          <div className="tool-panel active flex flex-1 flex-col gap-4 overflow-hidden rounded border border-green-500/30 bg-slate-900/30 p-4 py-6 lg:border-l lg:border-b-0 lg:bg-transparent lg:p-0 lg:py-0">
-            <div className="flex-1 overflow-y-auto rounded lg:rounded-none">
-              <div className="space-y-4 pr-4 lg:pr-4">
-                {thinking && (
-                  <div className="rounded border border-blue-500/30 bg-blue-500/10 p-3">
-                    <div className="mb-2 font-mono text-xs uppercase tracking-wider text-blue-400">
-                      Thinking
-                    </div>
-                    <div className="font-mono text-sm text-blue-200">{thinking}</div>
-                  </div>
-                )}
-
-                {state.trace.map((event, idx) => {
-                  if (event.type === "tool_call") {
-                    return (
-                      <div key={idx} className="rounded border border-yellow-500/30 bg-yellow-500/10 p-3">
-                        <div className="mb-2 font-mono text-xs uppercase tracking-wider text-yellow-400">
-                          🔧 {event.tool}
-                        </div>
-                        <div className="font-mono text-xs text-yellow-200">
-                          {JSON.stringify(event.args, null, 2)}
-                        </div>
-                      </div>
-                    );
-                  }
-                  if (event.type === "tool_result") {
-                    return (
-                      <div key={idx} className="rounded border border-green-500/30 bg-green-500/10 p-3">
-                        <div className="mb-2 font-mono text-xs uppercase tracking-wider text-green-400">
-                          ✓ Result
-                        </div>
-                        <div className="font-mono text-xs text-green-200">
-                          {JSON.stringify(event.result, null, 2)}
-                        </div>
-                      </div>
-                    );
-                  }
-                  return null;
-                })}
-              </div>
-            </div>
-
-            <div className="flex-shrink-0 rounded border border-green-500/30 bg-slate-900/50 p-4">
-              <div className="font-mono text-xs uppercase tracking-wider text-green-400 mb-3">Response</div>
-              {state.messages.length > 0 && (
-                <div className="font-mono text-sm text-green-300">
-                  {state.messages[state.messages.length - 1].text}
-                </div>
-              )}
-              {state.error && <div className="font-mono text-sm text-red-400">Error: {state.error}</div>}
-            </div>
-          </div>
-        )}
+      {/* Input Area */}
+      <div className="border-t border-green-500/20 p-6">
+        <div className="flex gap-3">
+          <button
+            onMouseDown={startRecording}
+            onMouseUp={stopRecording}
+            onTouchStart={startRecording}
+            onTouchEnd={stopRecording}
+            disabled={isRecording}
+            className={`rounded px-4 py-2 font-mono text-sm font-bold ${
+              isRecording
+                ? "bg-red-500/30 text-red-300"
+                : "bg-green-500/10 text-green-400 hover:bg-green-500/20"
+            }`}
+          >
+            {isRecording ? "🔴 RECORDING" : "🎤 RECORD"}
+          </button>
+          <input
+            type="text"
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyPress={(e) => e.key === "Enter" && handleSend()}
+            placeholder="Type or record..."
+            className="flex-1 rounded border border-green-500/20 bg-slate-900/50 p-2 font-mono text-sm text-green-300 placeholder-green-500/30 outline-none focus:border-green-500/50"
+          />
+          <button
+            onClick={handleSend}
+            className="rounded bg-green-500 px-4 py-2 font-mono text-sm font-bold text-slate-950 hover:bg-green-400"
+          >
+            SEND
+          </button>
+        </div>
       </div>
     </div>
   );

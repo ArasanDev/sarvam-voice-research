@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useReducer, useRef, useState } from "react";
+import { useCallback, useReducer, useRef, useState } from "react";
 
 export interface ChatMessageUI {
   id: string;
@@ -167,49 +167,10 @@ async function playAudioChunks(base64Chunks: string[]) {
   }
 }
 
-const STORAGE_KEY = "sarvam-chat-history";
-const CONVERSATION_ID_KEY = "sarvam-conversation-id";
-const LANGUAGE_CODE_KEY = "sarvam-language-code";
-
 export function useChat() {
   const [state, dispatch] = useReducer(reducer, initialState);
   const [thinking, setThinking] = useState("");
-  const [showResumePrompt, setShowResumePrompt] = useState(false);
   const historyRef = useRef<Array<{ role: "user" | "assistant"; content: string }>>([]);
-
-  // Load conversation history on mount
-  useEffect(() => {
-    const savedMessages = localStorage.getItem(STORAGE_KEY);
-    const savedConversationId = localStorage.getItem(CONVERSATION_ID_KEY);
-    const savedLanguageCode = localStorage.getItem(LANGUAGE_CODE_KEY);
-
-    if (savedMessages && savedConversationId) {
-      try {
-        const messages = JSON.parse(savedMessages);
-        if (Array.isArray(messages) && messages.length > 0) {
-          // Load messages into state
-          messages.forEach((msg: any) => {
-            if (msg.role && msg.text) {
-              dispatch({
-                type: "message",
-                text: msg.text,
-                language_code: msg.languageCode || "en-IN",
-                ts: msg.ts || Date.now(),
-              });
-              historyRef.current.push({ role: msg.role, content: msg.text });
-            }
-          });
-
-          // Restore conversation IDs from state
-          dispatch({ type: "conversation", conversationId: savedConversationId });
-          setShowResumePrompt(false);
-        }
-      } catch (e) {
-        console.error("Failed to load conversation history:", e);
-        localStorage.removeItem(STORAGE_KEY);
-      }
-    }
-  }, []);
 
   const sendMessage = useCallback(
     async (text: string, languageCode = "en-IN", wantsAudio = true) => {
@@ -238,7 +199,6 @@ export function useChat() {
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
-      let currentConversationId = state.conversationId;
 
       while (true) {
         const { value, done } = await reader.read();
@@ -253,9 +213,7 @@ export function useChat() {
               const payload = JSON.parse(data);
               switch (event) {
                 case "conversation":
-                  currentConversationId = payload.conversationId;
                   dispatch({ type: "conversation", conversationId: payload.conversationId });
-                  localStorage.setItem(CONVERSATION_ID_KEY, payload.conversationId);
                   break;
                 case "thinking":
                   setThinking(payload.text);
@@ -271,22 +229,10 @@ export function useChat() {
                     duration_ms: payload.duration_ms,
                   });
                   break;
-                case "message": {
+                case "message":
                   dispatch({ type: "message", text: payload.text, language_code: payload.language_code, ts: payload.ts });
                   historyRef.current.push({ role: "assistant", content: payload.text });
-                  // Save to localStorage
-                  const messageToStore = {
-                    role: "assistant",
-                    text: payload.text,
-                    languageCode: payload.language_code,
-                    ts: payload.ts,
-                  };
-                  const currentHistory = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
-                  currentHistory.push(messageToStore);
-                  localStorage.setItem(STORAGE_KEY, JSON.stringify(currentHistory));
-                  localStorage.setItem(LANGUAGE_CODE_KEY, payload.language_code);
                   break;
-                }
                 case "audio":
                   playAudioChunks(payload.audios);
                   break;
@@ -303,27 +249,9 @@ export function useChat() {
           }
         }
       }
-
-      // Save user message to localStorage
-      const userMessageToStore = {
-        role: "user",
-        text,
-        languageCode,
-        ts: Date.now(),
-      };
-      const currentHistory = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
-      currentHistory.unshift(userMessageToStore);
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(currentHistory));
     },
     [state.conversationId]
   );
 
-  const clearHistory = () => {
-    localStorage.removeItem(STORAGE_KEY);
-    localStorage.removeItem(CONVERSATION_ID_KEY);
-    localStorage.removeItem(LANGUAGE_CODE_KEY);
-    historyRef.current = [];
-  };
-
-  return { state, sendMessage, thinking, clearHistory };
+  return { state, sendMessage, thinking };
 }
