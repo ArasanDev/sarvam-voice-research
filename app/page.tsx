@@ -4,7 +4,7 @@ import { useRef, useEffect, useState } from "react";
 import { useBazaarChat } from "@/lib/useBazaarChat";
 
 export default function Home() {
-  const { state, sendMessage } = useBazaarChat();
+  const { state, sendMessage, thinking } = useBazaarChat();
   const [isActive, setIsActive] = useState(false);
   const [transcript, setTranscript] = useState("");
   const [displayedTranscript, setDisplayedTranscript] = useState("");
@@ -161,12 +161,12 @@ export default function Home() {
           <div className="tool-panel active flex flex-1 flex-col gap-4 overflow-hidden py-6">
             <div className="flex-1 overflow-y-auto">
               <div className="space-y-4 pr-4">
-                {state.thinking && (
+                {thinking && (
                   <div className="rounded border border-blue-500/30 bg-blue-500/10 p-3">
                     <div className="mb-2 font-mono text-xs uppercase tracking-wider text-blue-400">
                       Thinking
                     </div>
-                    <div className="font-mono text-sm text-blue-200">{state.thinking}</div>
+                    <div className="font-mono text-sm text-blue-200">{thinking}</div>
                   </div>
                 )}
 

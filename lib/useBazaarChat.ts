@@ -1,10 +1,10 @@
 "use client";
 
-import { useCallback, useReducer, useRef } from "react";
+import { useCallback, useReducer, useRef, useState } from "react";
 
 export interface ChatMessageUI {
   id: string;
-  role: "customer" | "assistant";
+  role: "user" | "assistant";
   text: string;
   languageCode?: string;
   ts: number;
@@ -27,10 +27,8 @@ interface State {
   turn: number;
   messages: ChatMessageUI[];
   trace: TraceEntry[];
-  thinking: boolean;
+  languageCode: string;
   error: string | null;
-  cart: { items: any[]; total_rupees: number } | null;
-  lastOrder: { order_id: string; total_rupees: number } | null;
 }
 
 type Action =
@@ -39,6 +37,7 @@ type Action =
   | { type: "tool_call"; id: string; tool: string; args: unknown; ts: number }
   | { type: "tool_result"; id: string; result: unknown; duration_ms: number }
   | { type: "message"; text: string; language_code: string; ts: number }
+  | { type: "thinking"; text: string }
   | { type: "error"; message: string }
   | { type: "done" }
   | { type: "reset_error" };
@@ -48,25 +47,9 @@ const initialState: State = {
   turn: 0,
   messages: [],
   trace: [],
-  thinking: false,
+  languageCode: "en-IN",
   error: null,
-  cart: null,
-  lastOrder: null,
 };
-
-function extractCartAndOrder(result: unknown, state: State) {
-  let cart = state.cart;
-  let lastOrder = state.lastOrder;
-  if (result && typeof result === "object") {
-    const r = result as any;
-    if (r.cart) cart = r.cart;
-    if (r.order_id) {
-      lastOrder = { order_id: r.order_id, total_rupees: r.total_rupees };
-      cart = { items: [], total_rupees: 0 };
-    }
-  }
-  return { cart, lastOrder };
-}
 
 function reducer(state: State, action: Action): State {
   switch (action.type) {
@@ -75,13 +58,13 @@ function reducer(state: State, action: Action): State {
       return {
         ...state,
         turn,
-        thinking: true,
+        languageCode: action.languageCode,
         error: null,
         messages: [
           ...state.messages,
           {
             id: `u-${turn}-${Date.now()}`,
-            role: "customer",
+            role: "user",
             text: action.text,
             languageCode: action.languageCode,
             ts: Date.now(),
@@ -108,11 +91,8 @@ function reducer(state: State, action: Action): State {
         ],
       };
     case "tool_result": {
-      const { cart, lastOrder } = extractCartAndOrder(action.result, state);
       return {
         ...state,
-        cart,
-        lastOrder,
         trace: state.trace.map((t) =>
           t.id === action.id
             ? { ...t, result: action.result, durationMs: action.duration_ms, status: "done" }
@@ -136,9 +116,11 @@ function reducer(state: State, action: Action): State {
         ],
       };
     case "error":
-      return { ...state, error: action.message, thinking: false };
+      return { ...state, error: action.message };
     case "done":
-      return { ...state, thinking: false };
+      return state;
+    case "thinking":
+      return state;
     case "reset_error":
       return { ...state, error: null };
     default:
@@ -185,13 +167,15 @@ async function playAudioChunks(base64Chunks: string[]) {
 
 export function useBazaarChat() {
   const [state, dispatch] = useReducer(reducer, initialState);
+  const [thinking, setThinking] = useState("");
   const historyRef = useRef<Array<{ role: "user" | "assistant"; content: string }>>([]);
 
   const sendMessage = useCallback(
-    async (text: string, languageCode: string, wantsAudio: boolean) => {
+    async (text: string, languageCode = "en-IN", wantsAudio = true) => {
       if (!text.trim()) return;
       dispatch({ type: "user_message", text, languageCode });
       historyRef.current.push({ role: "user", content: text });
+      setThinking("");
 
       const res = await fetch("/api/chat", {
         method: "POST",
@@ -206,7 +190,7 @@ export function useBazaarChat() {
       });
 
       if (!res.ok || !res.body) {
-        dispatch({ type: "error", message: "Could not reach Bazaar. Please try again." });
+        dispatch({ type: "error", message: "Could not connect to the assistant. Please try again." });
         return;
       }
 
@@ -221,37 +205,44 @@ export function useBazaarChat() {
         const parts = buffer.split("\n\n");
         buffer = parts.pop() || "";
         for (const part of parts) {
-          const [evs] = [parseSseChunk(part + "\n\n")];
+          const evs = parseSseChunk(part + "\n\n");
           for (const { event, data } of evs) {
-            const payload = JSON.parse(data);
-            switch (event) {
-              case "conversation":
-                dispatch({ type: "conversation", conversationId: payload.conversationId });
-                break;
-              case "tool_call":
-                dispatch({ type: "tool_call", id: payload.id, tool: payload.tool, args: payload.args, ts: payload.ts });
-                break;
-              case "tool_result":
-                dispatch({
-                  type: "tool_result",
-                  id: payload.id,
-                  result: payload.result,
-                  duration_ms: payload.duration_ms,
-                });
-                break;
-              case "message":
-                dispatch({ type: "message", text: payload.text, language_code: payload.language_code, ts: payload.ts });
-                historyRef.current.push({ role: "assistant", content: payload.text });
-                break;
-              case "audio":
-                playAudioChunks(payload.audios);
-                break;
-              case "error":
-                dispatch({ type: "error", message: payload.message });
-                break;
-              case "done":
-                dispatch({ type: "done" });
-                break;
+            try {
+              const payload = JSON.parse(data);
+              switch (event) {
+                case "conversation":
+                  dispatch({ type: "conversation", conversationId: payload.conversationId });
+                  break;
+                case "thinking":
+                  setThinking(payload.text);
+                  break;
+                case "tool_call":
+                  dispatch({ type: "tool_call", id: payload.id, tool: payload.tool, args: payload.args, ts: payload.ts });
+                  break;
+                case "tool_result":
+                  dispatch({
+                    type: "tool_result",
+                    id: payload.id,
+                    result: payload.result,
+                    duration_ms: payload.duration_ms,
+                  });
+                  break;
+                case "message":
+                  dispatch({ type: "message", text: payload.text, language_code: payload.language_code, ts: payload.ts });
+                  historyRef.current.push({ role: "assistant", content: payload.text });
+                  break;
+                case "audio":
+                  playAudioChunks(payload.audios);
+                  break;
+                case "error":
+                  dispatch({ type: "error", message: payload.message });
+                  break;
+                case "done":
+                  dispatch({ type: "done" });
+                  break;
+              }
+            } catch (e) {
+              console.error("Failed to parse SSE event:", e);
             }
           }
         }
@@ -260,5 +251,5 @@ export function useBazaarChat() {
     [state.conversationId]
   );
 
-  return { state, sendMessage };
+  return { state, sendMessage, thinking };
 }
