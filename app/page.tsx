@@ -204,7 +204,7 @@ export default function Home() {
               <div className="font-mono text-xs uppercase tracking-wider text-green-400 mb-3">Response</div>
               {state.messages.length > 0 && (
                 <div className="font-mono text-sm text-green-300">
-                  {state.messages[state.messages.length - 1].content}
+                  {state.messages[state.messages.length - 1].text}
                 </div>
               )}
               {state.error && <div className="font-mono text-sm text-red-400">Error: {state.error}</div>}

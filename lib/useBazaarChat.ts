@@ -13,6 +13,7 @@ export interface ChatMessageUI {
 
 export interface TraceEntry {
   id: string;
+  type: "tool_call" | "tool_result";
   tool: string;
   args: unknown;
   result?: unknown;
@@ -82,6 +83,7 @@ function reducer(state: State, action: Action): State {
           ...state.trace,
           {
             id: action.id,
+            type: "tool_call",
             tool: action.tool,
             args: action.args,
             status: "pending",
@@ -95,7 +97,7 @@ function reducer(state: State, action: Action): State {
         ...state,
         trace: state.trace.map((t) =>
           t.id === action.id
-            ? { ...t, result: action.result, durationMs: action.duration_ms, status: "done" }
+            ? { ...t, type: "tool_result", result: action.result, durationMs: action.duration_ms, status: "done" }
             : t
         ),
       };
