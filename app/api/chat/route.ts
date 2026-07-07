@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { getOrCreateConversation, runOrchestratorTurn } from "@/lib/orchestrator";
-import { encodeSseEvent, type BazaarEvent } from "@/lib/events";
+import { encodeSseEvent, type AppEvent } from "@/lib/events";
 import type { ChatMessage } from "@/lib/sarvam";
 
 export const runtime = "nodejs";
@@ -26,7 +26,7 @@ export async function POST(req: NextRequest) {
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
       const encoder = new TextEncoder();
-      const emit = (event: BazaarEvent) => {
+      const emit = (event: AppEvent) => {
         controller.enqueue(encoder.encode(encodeSseEvent(event)));
       };
 

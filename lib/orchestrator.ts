@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { db } from "./db";
 import { chatComplete, translate, ttsSpeak, type ChatMessage, type ToolSpec } from "./sarvam";
 import { TOOL_SPECS, executeTool } from "./tools";
-import type { BazaarEvent } from "./events";
+import type { AppEvent } from "./events";
 
 const MAX_TOOL_ITERATIONS = 6;
 
@@ -33,7 +33,7 @@ interface AgentLoopParams {
   history: ChatMessage[];
   userText: string;
   wantsAudio?: boolean;
-  emit: (event: BazaarEvent) => void;
+  emit: (event: AppEvent) => void;
 }
 
 async function runAgentLoop(params: AgentLoopParams): Promise<void> {
@@ -116,7 +116,7 @@ export interface OrchestratorParams {
   history: ChatMessage[];
   userText: string;
   wantsAudio?: boolean;
-  emit: (event: BazaarEvent) => void;
+  emit: (event: AppEvent) => void;
 }
 
 export async function runOrchestratorTurn(params: OrchestratorParams): Promise<void> {

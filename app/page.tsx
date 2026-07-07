@@ -1,10 +1,10 @@
 "use client";
 
 import { useRef, useEffect, useState } from "react";
-import { useBazaarChat } from "@/lib/useBazaarChat";
+import { useChat } from "@/lib/useChat";
 
 export default function Home() {
-  const { state, sendMessage, thinking } = useBazaarChat();
+  const { state, sendMessage, thinking } = useChat();
   const [isActive, setIsActive] = useState(false);
   const [transcript, setTranscript] = useState("");
   const [displayedTranscript, setDisplayedTranscript] = useState("");

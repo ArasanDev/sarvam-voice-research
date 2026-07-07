@@ -1,4 +1,4 @@
-export type BazaarEvent =
+export type AppEvent =
   | { type: "thinking"; text: string; ts: number }
   | { type: "tool_call"; id: string; tool: string; args: unknown; ts: number }
   | {
@@ -14,6 +14,6 @@ export type BazaarEvent =
   | { type: "done"; ts: number }
   | { type: "error"; message: string; ts: number };
 
-export function encodeSseEvent(event: BazaarEvent): string {
+export function encodeSseEvent(event: AppEvent): string {
   return `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`;
 }
