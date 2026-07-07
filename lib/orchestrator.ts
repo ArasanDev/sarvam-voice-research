@@ -1,34 +1,34 @@
 import { randomUUID } from "node:crypto";
 import { db } from "./db";
 import { chatComplete, translate, ttsSpeak, type ChatMessage, type ToolSpec } from "./sarvam";
-import { TOOL_SPECS, executeTool, SHOPKEEPER_TOOL_SPECS, executeShopkeeperTool } from "./tools";
+import { TOOL_SPECS, executeTool } from "./tools";
 import type { BazaarEvent } from "./events";
 
 const MAX_TOOL_ITERATIONS = 6;
 
-function customerSystemPrompt(shopName: string, languageCode: string): string {
+function researchAssistantPrompt(languageCode: string): string {
   const languageName = languageCode === "ta-IN" ? "Tamil" : "English";
-  return `You are Bazaar, a friendly voice/text shopping assistant for "${shopName}", a small Indian general store.
-Reply to the customer in ${languageName} (${languageCode}). Keep replies short (1-3 sentences) — they may be spoken aloud.
-Use the provided tools to search the catalog, manage the cart, and place orders. Never invent products, prices, or order ids — always use tool results.
-When a search returns no results, say so plainly. When placing an order, confirm the total and order id from the tool result.
-Do not mention that you are calling tools; just act on the results naturally.
-Reply in plain conversational sentences only — no markdown, no asterisks, no bullet points, no headings, since replies may be read aloud verbatim.`;
-}
+  return `You are a multilingual research assistant powered by Sarvam AI. Your role is to help users find information, analyze text, and understand content across languages.
 
-function shopkeeperSystemPrompt(shopName: string, languageCode: string): string {
-  const languageName = languageCode === "ta-IN" ? "Tamil" : "English";
-  return `You are Bazaar, a voice/text copilot for the OWNER of "${shopName}", a small Indian general store — not a customer.
-Reply in ${languageName} (${languageCode}). Keep replies short (1-3 sentences) — they may be spoken aloud.
-Use the provided tools to check or update stock, summarize today's sales, and surface unmet customer demand. Never invent numbers — always use tool results.
-When reporting unmet demand, name the specific searched terms and counts. When updating stock, confirm the new quantity.
+You have access to powerful Sarvam tools for multilingual processing:
+- Translate between languages
+- Detect language of text
+- Analyze text for sentiment and entities
+- Transliterate between scripts (Tamil ↔ English, etc.)
+- Extract text from images (OCR)
+- Synthesize speech in any Indian language
+
+Before using each tool, briefly narrate what you're thinking and why you need that tool. For example: "I'm detecting the language first to understand the input better" or "I'll translate this to English to provide a comprehensive answer."
+
+Reply in ${languageName} (${languageCode}). Keep replies short (2-4 sentences) — they may be spoken aloud.
+Never invent information — always use tool results to support your answers.
 Reply in plain conversational sentences only — no markdown, no asterisks, no bullet points, no headings, since replies may be read aloud verbatim.`;
 }
 
 interface AgentLoopParams {
   systemPrompt: string;
   toolSpecs: ToolSpec[];
-  executeToolFn: (name: string, args: any) => unknown;
+  executeToolFn: (name: string, args: any) => Promise<unknown>;
   languageCode: string;
   history: ChatMessage[];
   userText: string;
@@ -52,13 +52,17 @@ async function runAgentLoop(params: AgentLoopParams): Promise<void> {
       if (result.tool_calls && result.tool_calls.length > 0) {
         messages.push({ role: "assistant", content: result.content, tool_calls: result.tool_calls });
 
+        if (result.content) {
+          emit({ type: "thinking", text: result.content, ts: Date.now() });
+        }
+
         for (const call of result.tool_calls) {
           const args = safeParseArgs(call.function.arguments);
           const eventId = call.id || randomUUID();
           emit({ type: "tool_call", id: eventId, tool: call.function.name, args, ts: Date.now() });
 
           const start = Date.now();
-          const toolResult = params.executeToolFn(call.function.name, args);
+          const toolResult = await params.executeToolFn(call.function.name, args);
           const durationMs = Date.now() - start;
 
           emit({
@@ -80,7 +84,7 @@ async function runAgentLoop(params: AgentLoopParams): Promise<void> {
         continue;
       }
 
-      const replyText = stripMarkdown((result.content || "").trim()) || "Sorry, could you repeat that?";
+      const replyText = stripMarkdown((result.content || "").trim()) || "I'm not sure how to help with that. Could you rephrase?";
       emit({ type: "message", text: replyText, language_code: languageCode, ts: Date.now() });
 
       if (params.wantsAudio) {
@@ -107,33 +111,7 @@ async function runAgentLoop(params: AgentLoopParams): Promise<void> {
 }
 
 export interface OrchestratorParams {
-  shopId: string;
   conversationId: string;
-  shopName: string;
-  languageCode: string;
-  history: ChatMessage[]; // prior turns, excluding the new user message
-  userText: string;
-  wantsAudio?: boolean;
-  emit: (event: BazaarEvent) => void;
-}
-
-export async function runOrchestratorTurn(params: OrchestratorParams): Promise<void> {
-  const { shopId, conversationId } = params;
-  return runAgentLoop({
-    systemPrompt: customerSystemPrompt(params.shopName, params.languageCode),
-    toolSpecs: TOOL_SPECS,
-    executeToolFn: (name, args) => executeTool(name, args, { shopId, conversationId }),
-    languageCode: params.languageCode,
-    history: params.history,
-    userText: params.userText,
-    wantsAudio: params.wantsAudio,
-    emit: params.emit,
-  });
-}
-
-export interface ShopkeeperOrchestratorParams {
-  shopId: string;
-  shopName: string;
   languageCode: string;
   history: ChatMessage[];
   userText: string;
@@ -141,12 +119,12 @@ export interface ShopkeeperOrchestratorParams {
   emit: (event: BazaarEvent) => void;
 }
 
-export async function runShopkeeperTurn(params: ShopkeeperOrchestratorParams): Promise<void> {
-  const { shopId } = params;
+export async function runOrchestratorTurn(params: OrchestratorParams): Promise<void> {
+  const { conversationId } = params;
   return runAgentLoop({
-    systemPrompt: shopkeeperSystemPrompt(params.shopName, params.languageCode),
-    toolSpecs: SHOPKEEPER_TOOL_SPECS,
-    executeToolFn: (name, args) => executeShopkeeperTool(name, args, { shopId }),
+    systemPrompt: researchAssistantPrompt(params.languageCode),
+    toolSpecs: TOOL_SPECS,
+    executeToolFn: (name, args) => executeTool(name, args, { conversationId }),
     languageCode: params.languageCode,
     history: params.history,
     userText: params.userText,
@@ -172,15 +150,17 @@ function safeParseArgs(raw: string): unknown {
   }
 }
 
-export function getOrCreateConversation(shopId: string, conversationId: string | null, languageCode: string): string {
+export function getOrCreateConversation(conversationId: string | null, languageCode: string): string {
   if (conversationId) {
     const existing = db.prepare(`SELECT id FROM conversation WHERE id = ?`).get(conversationId);
     if (existing) return conversationId;
   }
   const id = randomUUID();
-  db.prepare(
-    `INSERT INTO conversation (id, shop_id, customer_language_code, created_at) VALUES (?, ?, ?, ?)`
-  ).run(id, shopId, languageCode, Date.now());
+  db.prepare(`INSERT INTO conversation (id, language_code, created_at) VALUES (?, ?, ?)`).run(
+    id,
+    languageCode,
+    Date.now()
+  );
   return id;
 }
 

@@ -1,4 +1,5 @@
 export type BazaarEvent =
+  | { type: "thinking"; text: string; ts: number }
   | { type: "tool_call"; id: string; tool: string; args: unknown; ts: number }
   | {
       type: "tool_result";

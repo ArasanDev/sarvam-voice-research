@@ -5,9 +5,6 @@ import type { ChatMessage } from "@/lib/sarvam";
 
 export const runtime = "nodejs";
 
-const SHOP_ID = "shop-anand-general-store";
-const SHOP_NAME = "Anand General Store";
-
 interface ChatRequestBody {
   conversationId: string | null;
   languageCode: string; // "en-IN" | "ta-IN"
@@ -19,7 +16,7 @@ interface ChatRequestBody {
 export async function POST(req: NextRequest) {
   const body = (await req.json()) as ChatRequestBody;
   const languageCode = body.languageCode === "ta-IN" ? "ta-IN" : "en-IN";
-  const conversationId = getOrCreateConversation(SHOP_ID, body.conversationId, languageCode);
+  const conversationId = getOrCreateConversation(body.conversationId, languageCode);
 
   const history: ChatMessage[] = body.history.map((m) => ({
     role: m.role,
@@ -42,9 +39,7 @@ export async function POST(req: NextRequest) {
 
       try {
         await runOrchestratorTurn({
-          shopId: SHOP_ID,
           conversationId,
-          shopName: SHOP_NAME,
           languageCode,
           history,
           userText: body.userText,
