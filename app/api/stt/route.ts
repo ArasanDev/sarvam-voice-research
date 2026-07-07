@@ -4,15 +4,21 @@ import { sttTranscribe } from "@/lib/sarvam";
 export const runtime = "nodejs";
 
 export async function POST(req: NextRequest) {
-  const form = await req.formData();
-  const file = form.get("audio");
-  if (!(file instanceof Blob)) {
-    return NextResponse.json({ error: "missing audio" }, { status: 400 });
-  }
   try {
-    const result = await sttTranscribe(file, "recording.webm");
+    const buffer = await req.arrayBuffer();
+    const blob = new Blob([buffer], { type: "audio/webm" });
+
+    if (!buffer || buffer.byteLength === 0) {
+      return NextResponse.json({ error: "No audio data received" }, { status: 400 });
+    }
+
+    const result = await sttTranscribe(blob, "recording.webm");
     return NextResponse.json(result);
   } catch (err: any) {
-    return NextResponse.json({ error: err?.message || "stt failed" }, { status: 502 });
+    console.error("STT Error:", err);
+    return NextResponse.json(
+      { error: err?.message || "Speech-to-text processing failed" },
+      { status: 502 }
+    );
   }
 }

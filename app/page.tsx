@@ -20,9 +20,16 @@ export default function Home() {
   const startRecording = async () => {
     setError(null);
     try {
+      console.log("🎤 Requesting microphone access...");
       const stream = await navigator.mediaDevices.getUserMedia({
-        audio: { echoCancellation: true, noiseSuppression: true }
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true
+        }
       });
+      console.log("✓ Microphone access granted");
+
       streamRef.current = stream;
       const mediaRecorder = new MediaRecorder(stream);
       mediaRecorderRef.current = mediaRecorder;
@@ -36,35 +43,62 @@ export default function Home() {
       mediaRecorder.onstop = async () => {
         setIsRecording(false);
         const audioBlob = new Blob(audioChunksRef.current, { type: "audio/webm" });
+        console.log(`🎤 Recording stopped. Audio size: ${audioBlob.size} bytes`);
 
         if (audioBlob.size < 100) {
-          setError("No audio detected.");
+          console.warn("⚠️ Audio too small");
+          setError("No audio detected. Please try again.");
           stream.getTracks().forEach((t) => t.stop());
           return;
         }
 
         try {
+          console.log("📤 Sending audio to STT...");
           const res = await fetch("/api/stt", {
             method: "POST",
             body: audioBlob,
             headers: { "Content-Type": "audio/webm" },
           });
 
+          console.log(`STT response status: ${res.status}`);
+
+          if (!res.ok) {
+            const errText = await res.text();
+            console.error(`STT error: ${res.status}`, errText);
+            setError(`Voice processing error (${res.status}). Please try again.`);
+            stream.getTracks().forEach((t) => t.stop());
+            return;
+          }
+
           const result = await res.json();
+          console.log("✓ STT result:", result);
+
           if (result.transcript?.trim()) {
+            console.log("✓ Transcript:", result.transcript);
             setInput(result.transcript);
           } else {
-            setError("Could not understand audio.");
+            console.warn("⚠️ Empty transcript");
+            setError("Could not understand audio. Please try again.");
           }
         } catch (err) {
-          setError("Voice processing failed.");
+          console.error("❌ Voice processing error:", err);
+          setError("Voice processing failed. Please try again.");
+        } finally {
+          stream.getTracks().forEach((t) => t.stop());
         }
-        stream.getTracks().forEach((t) => t.stop());
       };
 
+      console.log("🎙️ Starting recording...");
       mediaRecorder.start();
     } catch (err: any) {
-      setError(err.name === "NotAllowedError" ? "Microphone access denied." : "Microphone error.");
+      console.error("❌ Microphone error:", err);
+      if (err.name === "NotAllowedError") {
+        setError("Microphone access denied. Please allow in browser settings.");
+      } else if (err.name === "NotFoundError") {
+        setError("No microphone found. Please check your device.");
+      } else {
+        setError(`Microphone error: ${err.message}`);
+      }
     }
   };
 
