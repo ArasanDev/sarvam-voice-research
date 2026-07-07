@@ -1,0 +1,80 @@
+@import "tailwindcss";
+
+@theme {
+  /* Claude.ai-inspired warm neutral system */
+  --color-paper: #faf9f5;
+  --color-sidebar: #f3f1ea;
+  --color-card: #ffffff;
+  --color-border: #e7e4da;
+  --color-ink: #1f1e1d;
+  --color-ink-soft: #73726c;
+  --color-brand: #d97757;
+  --color-brand-soft: #f3e3da;
+  --color-brand-hover: #c2663f;
+  --color-user-bubble: #efece3;
+  --color-danger: #b3432f;
+
+  /* shadcn/ui semantic tokens, mapped onto the palette above */
+  --color-background: var(--color-paper);
+  --color-foreground: var(--color-ink);
+  --color-primary: var(--color-brand);
+  --color-primary-foreground: #ffffff;
+  --color-secondary: var(--color-sidebar);
+  --color-secondary-foreground: var(--color-ink);
+  --color-muted: var(--color-sidebar);
+  --color-muted-foreground: var(--color-ink-soft);
+  --color-accent: var(--color-brand-soft);
+  --color-accent-foreground: var(--color-ink);
+  --color-destructive: var(--color-danger);
+  --color-input: var(--color-border);
+  --color-ring: var(--color-brand);
+  --color-popover: var(--color-card);
+  --color-popover-foreground: var(--color-ink);
+  --radius: 0.75rem;
+}
+
+@theme inline {
+  --font-body: var(--font-body), var(--font-body-ta), sans-serif;
+  --font-mono: var(--font-mono);
+}
+
+body {
+  background: var(--color-paper);
+  color: var(--color-ink);
+  font-family: var(--font-body), var(--font-body-ta), sans-serif;
+}
+
+.font-mono-num {
+  font-family: var(--font-mono), monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .fade-in {
+    animation: fade-in 200ms ease-out;
+  }
+  .pulse-rec {
+    animation: pulse-rec 1.4s ease-in-out infinite;
+  }
+}
+
+@keyframes fade-in {
+  0% {
+    opacity: 0;
+    transform: translateY(2px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes pulse-rec {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(217, 119, 87, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 0 8px rgba(217, 119, 87, 0);
+  }
+}
