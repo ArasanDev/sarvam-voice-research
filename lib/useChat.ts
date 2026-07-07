@@ -167,7 +167,7 @@ async function playAudioChunks(base64Chunks: string[]) {
   }
 }
 
-export function useBazaarChat() {
+export function useChat() {
   const [state, dispatch] = useReducer(reducer, initialState);
   const [thinking, setThinking] = useState("");
   const historyRef = useRef<Array<{ role: "user" | "assistant"; content: string }>>([]);

@@ -1,12 +1,6 @@
 import type { Metadata } from "next";
-import { Inter, Noto_Sans_Tamil, IBM_Plex_Mono } from "next/font/google";
-import { TooltipProvider } from "@/components/ui/tooltip";
+import { IBM_Plex_Mono, Noto_Sans_Tamil } from "next/font/google";
 import "./globals.css";
-
-const inter = Inter({
-  variable: "--font-body",
-  subsets: ["latin"],
-});
 
 const notoTamil = Noto_Sans_Tamil({
   variable: "--font-body-ta",
@@ -21,8 +15,8 @@ const plexMono = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Bazaar — Voice Commerce Assistant",
-  description: "Multilingual voice/text shopping assistant for Anand General Store",
+  title: "Sarvam Voice Research Assistant",
+  description: "Multilingual voice-first research assistant powered by Sarvam AI",
 };
 
 export default function RootLayout({
@@ -31,12 +25,9 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html
-      lang="en"
-      className={`${inter.variable} ${notoTamil.variable} ${plexMono.variable} h-full antialiased`}
-    >
-      <body className="min-h-full flex flex-col bg-paper text-ink">
-        <TooltipProvider delayDuration={300}>{children}</TooltipProvider>
+    <html lang="en" className={`${notoTamil.variable} ${plexMono.variable} h-full antialiased`}>
+      <body className="min-h-full flex flex-col bg-slate-950 text-white">
+        {children}
       </body>
     </html>
   );
