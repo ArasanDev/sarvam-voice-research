@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useRef, useState, useEffect } from "react";
 import { useChat } from "@/lib/useChat";
 
 export default function Home() {
@@ -8,9 +8,15 @@ export default function Home() {
   const [input, setInput] = useState("");
   const [isRecording, setIsRecording] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const streamRef = useRef<MediaStream | null>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [state.messages, thinking]);
 
   const startRecording = async () => {
     setError(null);
@@ -77,97 +83,152 @@ export default function Home() {
     setInput("");
   };
 
-  const isActive = state.messages.length > 0;
+  const handleNewChat = () => {
+    window.location.reload();
+  };
 
   return (
-    <div className="flex h-screen w-full flex-col bg-slate-950 text-white">
-      {/* Header */}
-      <div className="border-b border-green-500/20 px-6 py-4">
-        <h1 className="font-mono text-sm tracking-widest text-green-400">
-          SARVAM VOICE RESEARCH ASSISTANT
-        </h1>
-      </div>
+    <div className="flex h-screen w-full bg-white">
+      {/* Sidebar */}
+      <div
+        className={`flex flex-col border-r border-gray-200 bg-gray-50 transition-all ${
+          sidebarOpen ? "w-64" : "w-0"
+        } overflow-hidden`}
+      >
+        <div className="flex items-center justify-between p-4 border-b border-gray-200">
+          {sidebarOpen && <h2 className="text-sm font-semibold text-gray-900">ChatGPT</h2>}
+        </div>
 
-      {/* Main Content */}
-      <div className="flex flex-1 overflow-hidden">
-        {/* Chat Area */}
-        <div className="flex flex-1 flex-col overflow-y-auto p-6">
-          <div className="space-y-4">
-            {state.messages.map((msg) => (
-              <div
-                key={msg.id}
-                className={`rounded p-3 font-mono text-sm ${
-                  msg.role === "user"
-                    ? "border border-blue-500/30 bg-blue-500/10 text-blue-300 ml-auto max-w-[70%]"
-                    : "border border-green-500/30 bg-green-500/10 text-green-300 mr-auto max-w-[70%]"
-                }`}
-              >
-                {msg.text}
-              </div>
-            ))}
+        <button
+          onClick={handleNewChat}
+          className="m-3 flex items-center gap-2 rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100"
+        >
+          <span>+ New chat</span>
+        </button>
 
-            {thinking && (
-              <div className="rounded border border-yellow-500/30 bg-yellow-500/10 p-3 font-mono text-sm text-yellow-300">
-                💭 {thinking}
+        <div className="flex-1 overflow-y-auto px-2">
+          {state.messages.length > 0 && (
+            <div className="space-y-2 text-xs">
+              <p className="px-2 py-3 text-gray-600">Today</p>
+              <div className="rounded-lg bg-white p-2 text-gray-700 hover:bg-gray-100 cursor-pointer">
+                {state.messages[0].text.substring(0, 30)}...
               </div>
-            )}
+            </div>
+          )}
+        </div>
 
-            {state.trace.map((event) => (
-              <div
-                key={event.id}
-                className="rounded border border-purple-500/30 bg-purple-500/10 p-2 font-mono text-xs text-purple-300"
-              >
-                {event.type === "tool_call" && `🔧 ${event.tool}`}
-                {event.type === "tool_result" && `✓ ${event.tool} result`}
-              </div>
-            ))}
-
-            {state.error && (
-              <div className="rounded border border-red-500/30 bg-red-500/10 p-3 font-mono text-sm text-red-300">
-                ⚠️ {state.error}
-              </div>
-            )}
-
-            {error && (
-              <div className="rounded border border-red-500/30 bg-red-500/10 p-3 font-mono text-sm text-red-300">
-                ⚠️ {error}
-              </div>
-            )}
-          </div>
+        <div className="border-t border-gray-200 p-3 text-xs text-gray-600">
+          Sarvam Voice Research
         </div>
       </div>
 
-      {/* Input Area */}
-      <div className="border-t border-green-500/20 p-6">
-        <div className="flex gap-3">
+      {/* Main Chat */}
+      <div className="flex flex-1 flex-col">
+        {/* Header */}
+        <div className="flex items-center justify-between border-b border-gray-200 px-6 py-4">
           <button
-            onMouseDown={startRecording}
-            onMouseUp={stopRecording}
-            onTouchStart={startRecording}
-            onTouchEnd={stopRecording}
-            disabled={isRecording}
-            className={`rounded px-4 py-2 font-mono text-sm font-bold ${
-              isRecording
-                ? "bg-red-500/30 text-red-300"
-                : "bg-green-500/10 text-green-400 hover:bg-green-500/20"
-            }`}
+            onClick={() => setSidebarOpen(!sidebarOpen)}
+            className="p-2 hover:bg-gray-100 rounded"
           >
-            {isRecording ? "🔴 RECORDING" : "🎤 RECORD"}
+            ☰
           </button>
-          <input
-            type="text"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyPress={(e) => e.key === "Enter" && handleSend()}
-            placeholder="Type or record..."
-            className="flex-1 rounded border border-green-500/20 bg-slate-900/50 p-2 font-mono text-sm text-green-300 placeholder-green-500/30 outline-none focus:border-green-500/50"
-          />
-          <button
-            onClick={handleSend}
-            className="rounded bg-green-500 px-4 py-2 font-mono text-sm font-bold text-slate-950 hover:bg-green-400"
-          >
-            SEND
-          </button>
+          <h1 className="text-lg font-semibold text-gray-900">Sarvam Voice Research</h1>
+          <div className="w-8"></div>
+        </div>
+
+        {/* Messages */}
+        <div className="flex-1 overflow-y-auto px-6 py-6">
+          {state.messages.length === 0 ? (
+            <div className="flex h-full flex-col items-center justify-center text-center">
+              <h2 className="text-3xl font-bold text-gray-900 mb-2">How can I help?</h2>
+              <p className="text-gray-600">Ask me anything or use voice input</p>
+            </div>
+          ) : (
+            <div className="space-y-4 max-w-4xl mx-auto">
+              {state.messages.map((msg) => (
+                <div
+                  key={msg.id}
+                  className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
+                >
+                  <div
+                    className={`max-w-2xl rounded-lg px-4 py-3 ${
+                      msg.role === "user"
+                        ? "bg-blue-600 text-white"
+                        : "bg-gray-100 text-gray-900"
+                    }`}
+                  >
+                    <p className="text-sm">{msg.text}</p>
+                  </div>
+                </div>
+              ))}
+
+              {thinking && (
+                <div className="flex justify-start">
+                  <div className="bg-gray-100 text-gray-900 rounded-lg px-4 py-3">
+                    <p className="text-sm">💭 {thinking}</p>
+                  </div>
+                </div>
+              )}
+
+              {state.trace.map((event) => (
+                <div key={event.id} className="flex justify-start">
+                  <div className="bg-purple-50 text-purple-900 rounded-lg px-4 py-2 text-xs border border-purple-200">
+                    {event.type === "tool_call" && `🔧 Calling ${event.tool}...`}
+                    {event.type === "tool_result" && `✓ ${event.tool} completed`}
+                  </div>
+                </div>
+              ))}
+
+              {(state.error || error) && (
+                <div className="flex justify-start">
+                  <div className="bg-red-50 text-red-900 rounded-lg px-4 py-3 border border-red-200">
+                    <p className="text-sm">⚠️ {state.error || error}</p>
+                  </div>
+                </div>
+              )}
+
+              <div ref={messagesEndRef} />
+            </div>
+          )}
+        </div>
+
+        {/* Input Area */}
+        <div className="border-t border-gray-200 px-6 py-4">
+          <div className="max-w-4xl mx-auto">
+            <div className="flex gap-2">
+              <button
+                onMouseDown={startRecording}
+                onMouseUp={stopRecording}
+                onTouchStart={startRecording}
+                onTouchEnd={stopRecording}
+                disabled={isRecording}
+                className={`flex-shrink-0 px-4 py-2 rounded-lg font-medium text-sm transition ${
+                  isRecording
+                    ? "bg-red-100 text-red-700 hover:bg-red-200"
+                    : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                }`}
+              >
+                {isRecording ? "🔴" : "🎤"}
+              </button>
+
+              <input
+                type="text"
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleSend()}
+                placeholder="Message Sarvam..."
+                className="flex-1 rounded-lg border border-gray-300 px-4 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              />
+
+              <button
+                onClick={handleSend}
+                className="flex-shrink-0 px-4 py-2 rounded-lg bg-blue-600 text-white font-medium text-sm hover:bg-blue-700 transition"
+              >
+                Send
+              </button>
+            </div>
+            {error && <p className="mt-2 text-xs text-red-600">{error}</p>}
+          </div>
         </div>
       </div>
     </div>
