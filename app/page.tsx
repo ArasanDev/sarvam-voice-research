@@ -3,15 +3,11 @@
 import { useRef, useState, useEffect } from "react";
 import { useChat } from "@/lib/useChat";
 
-const VOICE_RECORDING = "bg-red-500 text-white shadow-lg shadow-red-500/50";
-const VOICE_IDLE = "bg-white text-gray-700 border border-gray-200 hover:bg-gray-50";
-
 export default function Home() {
   const { state, sendMessage, thinking } = useChat();
   const [input, setInput] = useState("");
   const [isRecording, setIsRecording] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [sidebarOpen, setSidebarOpen] = useState(true);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const streamRef = useRef<MediaStream | null>(null);
@@ -19,7 +15,7 @@ export default function Home() {
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [state.messages, thinking]);
+  }, [state.messages]);
 
   const startRecording = async () => {
     setError(null);
@@ -42,7 +38,7 @@ export default function Home() {
         const audioBlob = new Blob(audioChunksRef.current, { type: "audio/webm" });
 
         if (audioBlob.size < 100) {
-          setError("No audio detected. Please try again.");
+          setError("No audio detected.");
           stream.getTracks().forEach((t) => t.stop());
           return;
         }
@@ -58,10 +54,10 @@ export default function Home() {
           if (result.transcript?.trim()) {
             setInput(result.transcript);
           } else {
-            setError("Could not understand audio. Please try again.");
+            setError("Could not understand audio.");
           }
         } catch (err) {
-          setError("Voice processing failed. Please try again.");
+          setError("Voice processing failed.");
         }
         stream.getTracks().forEach((t) => t.stop());
       };
@@ -78,8 +74,7 @@ export default function Home() {
 
   const handleSend = () => {
     if (!input.trim()) {
-      setError("Please type a message or use voice input.");
-      setTimeout(() => setError(null), 3000);
+      setError("Type a message or record audio.");
       return;
     }
     setError(null);
@@ -88,198 +83,98 @@ export default function Home() {
   };
 
   return (
-    <div className="flex h-screen w-full bg-gradient-to-b from-white via-gray-50 to-white overflow-hidden">
-      {/* Sidebar */}
-      <div
-        className={`flex flex-col border-r border-gray-200 bg-white transition-all duration-300 ${
-          sidebarOpen ? "w-64" : "w-0"
-        } overflow-hidden shadow-sm`}
-      >
-        {/* Sidebar Header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200">
-          {sidebarOpen && (
-            <div className="flex items-center gap-2">
-              <div className="w-6 h-6 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg"></div>
-              <h2 className="text-sm font-semibold text-gray-900">Sarvam</h2>
-            </div>
-          )}
-        </div>
-
-        {/* New Chat Button */}
-        <button
-          onClick={() => window.location.reload()}
-          className="mx-3 mt-3 flex items-center justify-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
-        >
-          <span>➕</span>
-          <span>New chat</span>
-        </button>
-
-        {/* Chat History */}
-        <div className="flex-1 overflow-y-auto px-3 py-4 space-y-2">
-          {state.messages.length > 0 && (
-            <>
-              <p className="px-2 py-2 text-xs font-medium text-gray-500 uppercase">Today</p>
-              <div className="rounded-lg px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 cursor-pointer transition-colors truncate">
-                {state.messages[0].text.substring(0, 40)}...
-              </div>
-            </>
-          )}
-        </div>
-
-        {/* Sidebar Footer */}
-        <div className="border-t border-gray-200 p-3">
-          <p className="text-xs text-gray-500 font-medium">Sarvam Voice Research</p>
-          <p className="text-xs text-gray-400 mt-1">Powered by Sarvam AI</p>
-        </div>
+    <div className="flex h-screen w-full flex-col bg-slate-950 text-white">
+      {/* Header */}
+      <div className="border-b border-green-500/20 px-6 py-4">
+        <h1 className="font-mono text-sm tracking-widest text-green-400">
+          SARVAM VOICE RESEARCH ASSISTANT
+        </h1>
       </div>
 
-      {/* Main Chat Area */}
-      <div className="flex flex-1 flex-col overflow-hidden">
-        {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 bg-white/80 backdrop-blur-sm">
-          <button
-            onClick={() => setSidebarOpen(!sidebarOpen)}
-            className="p-2 hover:bg-gray-100 rounded-lg transition-colors text-gray-700 font-bold text-xl"
-          >
-            {sidebarOpen ? "☰" : "☰"}
-          </button>
-          <h1 className="text-base font-semibold text-gray-900">Sarvam Voice Research Assistant</h1>
-          <div className="w-10"></div>
-        </div>
-
-        {/* Messages Container */}
-        <div className="flex-1 overflow-y-auto px-6 py-8">
-          {state.messages.length === 0 ? (
-            <div className="flex h-full flex-col items-center justify-center text-center max-w-2xl mx-auto">
-              <div className="mb-4 text-4xl">🎤</div>
-              <h2 className="text-3xl font-bold text-gray-900 mb-2">How can I assist?</h2>
-              <p className="text-gray-600 text-lg">Start a conversation by typing or using voice input</p>
-            </div>
-          ) : (
-            <div className="max-w-3xl mx-auto space-y-4">
-              {state.messages.map((msg) => (
-                <div
-                  key={msg.id}
-                  className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"} animate-fade-in`}
-                >
-                  <div
-                    className={`max-w-2xl rounded-2xl px-4 py-3 shadow-sm ${
-                      msg.role === "user"
-                        ? "bg-blue-600 text-white rounded-br-none"
-                        : "bg-gray-100 text-gray-900 rounded-bl-none"
-                    }`}
-                  >
-                    <p className="text-sm leading-relaxed">{msg.text}</p>
-                  </div>
-                </div>
-              ))}
-
-              {thinking && (
-                <div className="flex justify-start animate-fade-in">
-                  <div className="bg-gray-100 text-gray-900 rounded-2xl rounded-bl-none px-4 py-3 shadow-sm">
-                    <div className="flex items-center gap-2">
-                      <div className="w-2 h-2 bg-gray-400 rounded-full animate-pulse"></div>
-                      <p className="text-sm">{thinking}</p>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {state.trace.map((event) => (
-                <div key={event.id} className="flex justify-start animate-fade-in">
-                  <div className="bg-purple-50 text-purple-700 rounded-xl px-3 py-2 text-xs border border-purple-200 shadow-sm">
-                    <div className="flex items-center gap-1">
-                      <span>{event.type === "tool_call" ? "⚙️" : "✓"}</span>
-                      <span className="font-medium">{event.tool}</span>
-                      {event.type === "tool_call" && <span className="animate-spin">◌</span>}
-                    </div>
-                  </div>
-                </div>
-              ))}
-
-              {(state.error || error) && (
-                <div className="flex justify-start animate-fade-in">
-                  <div className="bg-red-50 text-red-700 rounded-xl px-4 py-3 border border-red-200 shadow-sm max-w-md">
-                    <p className="text-sm font-medium">⚠️ {state.error || error}</p>
-                  </div>
-                </div>
-              )}
-
-              <div ref={messagesEndRef} />
-            </div>
-          )}
-        </div>
-
-        {/* Input Area */}
-        <div className="border-t border-gray-200 px-6 py-4 bg-white/80 backdrop-blur-sm">
-          <div className="max-w-3xl mx-auto">
-            <div className="flex gap-3 items-end">
-              {/* Voice Button */}
-              <button
-                onMouseDown={startRecording}
-                onMouseUp={stopRecording}
-                onTouchStart={startRecording}
-                onTouchEnd={stopRecording}
-                className={`flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center font-bold text-lg transition-all duration-200 ${
-                  isRecording ? VOICE_RECORDING : VOICE_IDLE
+      {/* Main Content */}
+      <div className="flex flex-1 overflow-hidden">
+        {/* Chat Area */}
+        <div className="flex flex-1 flex-col overflow-y-auto p-6">
+          <div className="space-y-4">
+            {state.messages.map((msg) => (
+              <div
+                key={msg.id}
+                className={`rounded p-3 font-mono text-sm ${
+                  msg.role === "user"
+                    ? "border border-blue-500/30 bg-blue-500/10 text-blue-300 ml-auto max-w-[70%]"
+                    : "border border-green-500/30 bg-green-500/10 text-green-300 mr-auto max-w-[70%]"
                 }`}
-                title={isRecording ? "Release to stop recording" : "Press to record"}
               >
-                🎤
-              </button>
-
-              {/* Input Field */}
-              <div className="flex-1">
-                <input
-                  type="text"
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && !e.shiftKey) {
-                      e.preventDefault();
-                      handleSend();
-                    }
-                  }}
-                  placeholder="Type your question or use voice..."
-                  className="w-full px-4 py-2.5 rounded-full border border-gray-300 text-sm focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-all bg-white"
-                />
+                {msg.text}
               </div>
+            ))}
 
-              {/* Send Button */}
-              <button
-                onClick={handleSend}
-                className="flex-shrink-0 w-10 h-10 rounded-full bg-blue-600 text-white font-bold text-lg hover:bg-blue-700 transition-all duration-200 flex items-center justify-center shadow-lg hover:shadow-blue-500/50 hover:shadow-lg active:scale-95"
-                title="Send message (Enter)"
-              >
-                ↗️
-              </button>
-            </div>
-
-            {/* Error Message */}
-            {error && (
-              <p className="mt-2 text-xs text-red-600 px-4 animate-fade-in">
-                {error}
-              </p>
+            {thinking && (
+              <div className="rounded border border-yellow-500/30 bg-yellow-500/10 p-3 font-mono text-sm text-yellow-300">
+                💭 {thinking}
+              </div>
             )}
+
+            {state.trace.map((event) => (
+              <div
+                key={event.id}
+                className="rounded border border-purple-500/30 bg-purple-500/10 p-2 font-mono text-xs text-purple-300"
+              >
+                {event.type === "tool_call" && `🔧 ${event.tool}`}
+                {event.type === "tool_result" && `✓ ${event.tool} result`}
+              </div>
+            ))}
+
+            {state.error && (
+              <div className="rounded border border-red-500/30 bg-red-500/10 p-3 font-mono text-sm text-red-300">
+                ⚠️ {state.error}
+              </div>
+            )}
+
+            {error && (
+              <div className="rounded border border-red-500/30 bg-red-500/10 p-3 font-mono text-sm text-red-300">
+                ⚠️ {error}
+              </div>
+            )}
+
+            <div ref={messagesEndRef} />
           </div>
         </div>
       </div>
 
-      <style>{`
-        @keyframes fade-in {
-          from {
-            opacity: 0;
-            transform: translateY(8px);
-          }
-          to {
-            opacity: 1;
-            transform: translateY(0);
-          }
-        }
-        .animate-fade-in {
-          animation: fade-in 0.3s ease-out;
-        }
-      `}</style>
+      {/* Input Area */}
+      <div className="border-t border-green-500/20 p-6">
+        <div className="flex gap-3">
+          <button
+            onMouseDown={startRecording}
+            onMouseUp={stopRecording}
+            onTouchStart={startRecording}
+            onTouchEnd={stopRecording}
+            disabled={isRecording}
+            className={`rounded px-4 py-2 font-mono text-sm font-bold ${
+              isRecording
+                ? "bg-red-500/30 text-red-300"
+                : "bg-green-500/10 text-green-400 hover:bg-green-500/20"
+            }`}
+          >
+            {isRecording ? "🔴 RECORDING" : "🎤 RECORD"}
+          </button>
+          <input
+            type="text"
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && handleSend()}
+            placeholder="Type or record..."
+            className="flex-1 rounded border border-green-500/20 bg-slate-900/50 p-2 font-mono text-sm text-green-300 placeholder-green-500/30 outline-none focus:border-green-500/50"
+          />
+          <button
+            onClick={handleSend}
+            className="rounded bg-green-500 px-4 py-2 font-mono text-sm font-bold text-slate-950 hover:bg-green-400"
+          >
+            SEND
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
