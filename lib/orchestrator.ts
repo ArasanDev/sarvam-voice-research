@@ -1,38 +1,37 @@
 import { randomUUID } from "node:crypto";
-import { chatComplete, translate, ttsSpeak, type ChatMessage, type ToolSpec } from "./sarvam";
-import { TOOL_SPECS, executeTool } from "./tools";
-import type { AppEvent } from "./events";
+import { chatComplete, ttsSpeak, type ChatMessage, type ToolSpec } from "./sarvam";
+import { discoverCapabilities, executeMcpTool, getToolSpecs } from "./mcp/registry";
+import type { AppEvent, AgentPhase } from "./events";
 
 const MAX_TOOL_ITERATIONS = 6;
 
-function researchAssistantPrompt(languageCode: string): string {
-  const languageName = languageCode === "ta-IN" ? "Tamil" : "English";
-  return `You are a multilingual research assistant powered by Sarvam AI. Your role is to help users find information, analyze text, and understand content across languages.
+function conduitPrompt(languageCode: string, toolNames: string[]): string {
+  const languageName =
+    languageCode === "ta-IN" ? "Tamil" : languageCode === "hi-IN" ? "Hindi" : "English";
 
-You have access to powerful Sarvam tools for multilingual processing:
-- Translate between languages
-- Detect language of text
-- Analyze text for sentiment and entities
-- Transliterate between scripts (Tamil ↔ English, etc.)
-- Extract text from images (OCR)
-- Synthesize speech in any Indian language
+  return `You are Conduit — a voice-native AI agent powered by MCP (Model Context Protocol) servers.
+Your capabilities come from live MCP tools: ${toolNames.join(", ") || "none yet"}.
 
-Before using each tool, briefly narrate what you're thinking and why you need that tool. For example: "I'm detecting the language first to understand the input better" or "I'll translate this to English to provide a comprehensive answer."
-
-Reply in ${languageName} (${languageCode}). Keep replies short (2-4 sentences) — they may be spoken aloud.
-Never invent information — always use tool results to support your answers.
-Reply in plain conversational sentences only — no markdown, no asterisks, no bullet points, no headings, since replies may be read aloud verbatim.`;
+You help users research, translate, analyze, and understand content across Indian languages.
+Before each tool call, briefly explain what you're doing in one short sentence — the user hears this aloud.
+Reply in ${languageName} (${languageCode}). Keep final replies to 2-4 spoken sentences.
+Never invent facts — ground answers in tool results.
+Plain conversational text only — no markdown, bullets, or headings (replies are spoken aloud).`;
 }
 
 interface AgentLoopParams {
   systemPrompt: string;
   toolSpecs: ToolSpec[];
-  executeToolFn: (name: string, args: any) => Promise<unknown>;
+  executeToolFn: (name: string, args: Record<string, unknown>) => Promise<unknown>;
   languageCode: string;
   history: ChatMessage[];
   userText: string;
   wantsAudio?: boolean;
   emit: (event: AppEvent) => void;
+}
+
+function emitPhase(emit: (event: AppEvent) => void, phase: AgentPhase, label?: string) {
+  emit({ type: "agent_state", phase, label, ts: Date.now() });
 }
 
 async function runAgentLoop(params: AgentLoopParams): Promise<void> {
@@ -45,6 +44,8 @@ async function runAgentLoop(params: AgentLoopParams): Promise<void> {
   ];
 
   try {
+    emitPhase(emit, "thinking", "Processing your request");
+
     for (let i = 0; i < MAX_TOOL_ITERATIONS; i++) {
       const result = await chatComplete(messages, { tools: params.toolSpecs });
 
@@ -55,8 +56,10 @@ async function runAgentLoop(params: AgentLoopParams): Promise<void> {
           emit({ type: "thinking", text: result.content, ts: Date.now() });
         }
 
+        emitPhase(emit, "acting", "Using MCP tools");
+
         for (const call of result.tool_calls) {
-          const args = safeParseArgs(call.function.arguments);
+          const args = safeParseArgs(call.function.arguments) as Record<string, unknown>;
           const eventId = call.id || randomUUID();
           emit({ type: "tool_call", id: eventId, tool: call.function.name, args, ts: Date.now() });
 
@@ -83,18 +86,24 @@ async function runAgentLoop(params: AgentLoopParams): Promise<void> {
         continue;
       }
 
-      const replyText = stripMarkdown((result.content || "").trim()) || "I'm not sure how to help with that. Could you rephrase?";
+      const replyText =
+        stripMarkdown((result.content || "").trim()) ||
+        "I'm not sure how to help with that. Could you rephrase?";
+
       emit({ type: "message", text: replyText, language_code: languageCode, ts: Date.now() });
 
       if (params.wantsAudio) {
+        emitPhase(emit, "speaking", "Speaking response");
         try {
           const tts = await ttsSpeak(replyText, languageCode);
           emit({ type: "audio", audios: tts.audios, ts: Date.now() });
-        } catch (err: any) {
-          emit({ type: "error", message: `Voice reply failed: ${err?.message || "unknown"}`, ts: Date.now() });
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : "unknown";
+          emit({ type: "error", message: `Voice reply failed: ${msg}`, ts: Date.now() });
         }
       }
 
+      emitPhase(emit, "idle");
       emit({ type: "done", ts: Date.now() });
       return;
     }
@@ -104,8 +113,11 @@ async function runAgentLoop(params: AgentLoopParams): Promise<void> {
       message: "The assistant took too many steps to respond. Please try again.",
       ts: Date.now(),
     });
-  } catch (err: any) {
-    emit({ type: "error", message: err?.message || "Something went wrong.", ts: Date.now() });
+    emitPhase(emit, "idle");
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : "Something went wrong.";
+    emit({ type: "error", message: msg, ts: Date.now() });
+    emitPhase(emit, "idle");
   }
 }
 
@@ -119,11 +131,22 @@ export interface OrchestratorParams {
 }
 
 export async function runOrchestratorTurn(params: OrchestratorParams): Promise<void> {
-  const { conversationId } = params;
+  const { specs, source } = await getToolSpecs();
+  const { tools } = await discoverCapabilities();
+
+  params.emit({
+    type: "capabilities",
+    tools: tools.map((t) => ({ name: t.name, description: t.description, server: t.server })),
+    source,
+    ts: Date.now(),
+  });
+
+  const toolNames = specs.map((s) => s.function.name);
+
   return runAgentLoop({
-    systemPrompt: researchAssistantPrompt(params.languageCode),
-    toolSpecs: TOOL_SPECS,
-    executeToolFn: (name, args) => executeTool(name, args, { conversationId }),
+    systemPrompt: conduitPrompt(params.languageCode, toolNames),
+    toolSpecs: specs,
+    executeToolFn: (name, args) => executeMcpTool(name, args),
     languageCode: params.languageCode,
     history: params.history,
     userText: params.userText,
@@ -149,10 +172,4 @@ function safeParseArgs(raw: string): unknown {
   }
 }
 
-export function getOrCreateConversation(conversationId: string | null, languageCode: string): string {
-  // Simplified: just generate a new ID each time or use provided one
-  if (conversationId) return conversationId;
-  return randomUUID();
-}
-
-export { translate };
+export { getOrCreateConversation } from "./conversations";

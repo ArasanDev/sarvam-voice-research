@@ -1,5 +1,10 @@
 import { NextRequest } from "next/server";
-import { getOrCreateConversation, runOrchestratorTurn } from "@/lib/orchestrator";
+import {
+  getOrCreateConversation,
+  loadConversationHistory,
+  saveMessage,
+} from "@/lib/conversations";
+import { runOrchestratorTurn } from "@/lib/orchestrator";
 import { encodeSseEvent, type AppEvent } from "@/lib/events";
 import type { ChatMessage } from "@/lib/sarvam";
 
@@ -7,7 +12,7 @@ export const runtime = "nodejs";
 
 interface ChatRequestBody {
   conversationId: string | null;
-  languageCode: string; // "en-IN" | "ta-IN"
+  languageCode: string;
   history: Array<{ role: "user" | "assistant"; content: string }>;
   userText: string;
   wantsAudio?: boolean;
@@ -17,9 +22,8 @@ export async function POST(req: NextRequest) {
   try {
     const body = (await req.json()) as ChatRequestBody;
 
-    // Validate required fields
     if (!body.userText || typeof body.userText !== "string") {
-      return new Response(JSON.stringify({ error: "userText is required and must be a string" }), {
+      return new Response(JSON.stringify({ error: "userText is required" }), {
         status: 400,
         headers: { "Content-Type": "application/json" },
       });
@@ -32,54 +36,61 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    if (!body.history || !Array.isArray(body.history)) {
-      return new Response(JSON.stringify({ error: "history must be an array" }), {
-        status: 400,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-
-    // Validate language code
-    const validLanguages = ["en-IN", "ta-IN", "hi-IN", "kn-IN", "te-IN", "ml-IN", "mr-IN", "bn-IN", "gu-IN"];
+    const validLanguages = [
+      "en-IN", "ta-IN", "hi-IN", "kn-IN", "te-IN", "ml-IN", "mr-IN", "bn-IN", "gu-IN",
+    ];
     const languageCode = validLanguages.includes(body.languageCode) ? body.languageCode : "en-IN";
 
     const conversationId = getOrCreateConversation(body.conversationId, languageCode);
 
-  const history: ChatMessage[] = body.history.map((m) => ({
-    role: m.role,
-    content: m.content,
-  }));
+    saveMessage(conversationId, "user", body.userText.trim());
 
-  const stream = new ReadableStream<Uint8Array>({
-    async start(controller) {
-      const encoder = new TextEncoder();
-      const emit = (event: AppEvent) => {
-        controller.enqueue(encoder.encode(encodeSseEvent(event)));
-      };
+    const persistedHistory = loadConversationHistory(conversationId);
+    const history: ChatMessage[] = (
+      persistedHistory.length > 0 ? persistedHistory : body.history || []
+    )
+      .slice(0, -1)
+      .map((m) => ({ role: m.role, content: m.content }));
 
-      // Let the client know which conversation this turn belongs to.
-      controller.enqueue(
-        encoder.encode(
-          `event: conversation\ndata: ${JSON.stringify({ conversationId })}\n\n`
-        )
-      );
+    const stream = new ReadableStream<Uint8Array>({
+      async start(controller) {
+        const encoder = new TextEncoder();
+        const emit = (event: AppEvent) => {
+          controller.enqueue(encoder.encode(encodeSseEvent(event)));
+        };
 
-      try {
-        await runOrchestratorTurn({
-          conversationId,
-          languageCode,
-          history,
-          userText: body.userText,
-          wantsAudio: !!body.wantsAudio,
-          emit,
-        });
-      } catch (err: any) {
-        emit({ type: "error", message: err?.message || "Unexpected error", ts: Date.now() });
-      } finally {
-        controller.close();
-      }
-    },
-  });
+        controller.enqueue(
+          encoder.encode(
+            `event: conversation\ndata: ${JSON.stringify({ conversationId })}\n\n`
+          )
+        );
+
+        let assistantReply = "";
+
+        try {
+          await runOrchestratorTurn({
+            conversationId,
+            languageCode,
+            history,
+            userText: body.userText,
+            wantsAudio: !!body.wantsAudio,
+            emit: (event) => {
+              if (event.type === "message") assistantReply = event.text;
+              emit(event);
+            },
+          });
+
+          if (assistantReply) {
+            saveMessage(conversationId, "assistant", assistantReply);
+          }
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : "Unexpected error";
+          emit({ type: "error", message: msg, ts: Date.now() });
+        } finally {
+          controller.close();
+        }
+      },
+    });
 
     return new Response(stream, {
       headers: {
@@ -88,9 +99,9 @@ export async function POST(req: NextRequest) {
         Connection: "keep-alive",
       },
     });
-  } catch (err: any) {
+  } catch (err: unknown) {
     if (err instanceof SyntaxError) {
-      return new Response(JSON.stringify({ error: "Invalid JSON in request body" }), {
+      return new Response(JSON.stringify({ error: "Invalid JSON" }), {
         status: 400,
         headers: { "Content-Type": "application/json" },
       });

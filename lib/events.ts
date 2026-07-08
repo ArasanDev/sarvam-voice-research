@@ -1,4 +1,8 @@
+export type AgentPhase = "idle" | "listening" | "transcribing" | "thinking" | "acting" | "speaking";
+
 export type AppEvent =
+  | { type: "agent_state"; phase: AgentPhase; label?: string; ts: number }
+  | { type: "capabilities"; tools: Array<{ name: string; description: string; server: string }>; source: "mcp" | "local"; ts: number }
   | { type: "thinking"; text: string; ts: number }
   | { type: "tool_call"; id: string; tool: string; args: unknown; ts: number }
   | {
